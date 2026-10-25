@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -8,8 +9,8 @@ n_embd = 384 # how many numbers describe each letter
 n_head = 6 #attention heads per block
 n_layer = 6 # how many blocks stacked on top of each other
 dropout = 0.2 #randomly switches off 20% of the numbers while training
-lr=1e-3
-max_steps = 5000
+lr=3e-4
+max_steps = 3000
 eval_every = 500
 text: str = open('input.txt', encoding='utf-8').read()
 chars = sorted(set(text))
@@ -100,9 +101,9 @@ class FeedForward(nn.Module): #neural network to proccess the info for each lett
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential( #chains the layers together so x goes through a then with a,b..
-            nn.Linear(n_embd,4 * n_embd), #expands 32 numbers that represent dimensions to 128
+            nn.Linear(n_embd,4 * n_embd), #expands each letter n_embd numbers to 4*n_embed (384->1536) to give room to think
             nn.GELU(),#bend so the model leans to more complex patterns
-            nn.Linear(4 * n_embd, n_embd), #turns 128 back to 32 numbers that represent
+            nn.Linear(4 * n_embd, n_embd), #shrinks back to n_embd numbers per letter (1536 -> 384)
             nn.Dropout(dropout)
         )
     def forward(self,x):
@@ -123,21 +124,21 @@ class Block(nn.Module):
 
 
 ##The Model class
-class Bigram(nn.Module):
+class GPT(nn.Module):
     def __init__(self):
         super().__init__()
-        self.tok_emb = nn.Embedding(vocab_size,n_embd) #what the letter is and gives 32 numbers that describe the letter
-        self.pos_emb = nn.Embedding(block_size,n_embd) #Where is the letter (0 to block_size-1) and gives 32 numbers that describe the letter
-        self.head = nn.Linear(n_embd,vocab_size) #turns 32 numbers to 65 scores using trainable weights
-        self.blocks = nn.Sequential(*[Block() for _ in range(n_layer)]) #makes a list of 4 seperate blocks with weights for each one and chains them to blocks
-        self.in_f = nn.LayerNorm(n_embd)
+        self.tok_emb = nn.Embedding(vocab_size,n_embd) #WHAT the letter is -> n_embd numbers that describe it
+        self.pos_emb = nn.Embedding(block_size,n_embd) #WHERE the letter is (position 0 to block_size-1) -> n_embd numbers
+        self.head = nn.Linear(n_embd,vocab_size) #turns n_embd numbers into vocab_size scores (one per possible next letter)
+        self.blocks = nn.Sequential(*[Block() for _ in range(n_layer)]) #n_layer separate blocks, each with its own weights, chained one after another
+        self.in_f = nn.LayerNorm(n_embd) #final normalization before the head
 
 
     def forward(self,idx,targets=None):
         B,T = idx.shape # B = how many chunks, T = how many letters per chunk
-        tok = self.tok_emb(idx) # what each letter is (B,T,32)
-        pos = self.pos_emb(torch.arange(T,device=idx.device)) #where each letter is (T,32)
-        x = tok+pos #combines them (B,T,32)
+        tok = self.tok_emb(idx) # what each letter is (B, T, n_embd)
+        pos = self.pos_emb(torch.arange(T,device=idx.device)) #where each letter is (T, n_embd)
+        x = tok+pos #what + where combined (B, T, n_embd)
         x = self.blocks(x)
         x = self.in_f(x)
         logits = self.head(x) #turns scores for the next character
@@ -147,6 +148,7 @@ class Bigram(nn.Module):
         else:
             loss = F.cross_entropy(logits.view(-1,vocab_size),targets.view(-1)) #compare the scores to the real answers
         return logits,loss
+    @torch.no_grad()
     def generate(self,idx,n_new): #loop that predicts the next letter and add it to the text
         for _ in range(n_new):
             logits,loss = self(idx[:,-block_size:])
@@ -156,7 +158,7 @@ class Bigram(nn.Module):
             idx = torch.cat([idx,next_id],dim=1)  #adds the chosen letter to the end of the text
         return idx
 
-model = Bigram()
+model = GPT()
 model = model.to(device)
 print(sum(p.numel() for p in model.parameters()) / 1e6, "million parameters")
 
@@ -175,20 +177,35 @@ def estimate_loss():
     return out
 
 
+if os.path.exists("./model.pt"):
+    model.load_state_dict(torch.load("./model.pt"))
+    print("loaded saved model!")
 
+else:
 #training loop
-optimizer = torch.optim.Adam(model.parameters(),lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(),lr=lr)
+    best_valid = float('inf')    # infinity: any real loss will be better
 
-for step in range(max_steps):
-    x,y = get_batch('train')
-    logits,loss = model(x,y)
-    optimizer.zero_grad() #forgets the last corrections
-    loss.backward() #checks for each number which gets less on the loss function
-    optimizer.step() #move every number torward the right way that gets less on the loss function
-    if step % eval_every == 0:
-        losses = estimate_loss()
-        print(f"step {step}: train {losses['train']:.3f}, valid {losses['valid']:.3f}")
+    for step in range(max_steps):
+        x,y = get_batch('train')
+        logits,loss = model(x,y)
+        optimizer.zero_grad() #forgets the last corrections
+        loss.backward() #checks for each number which gets less on the loss function
+        optimizer.step() #move every number torward the right way that gets less on the loss function
+        if step % eval_every == 0:
+            losses = estimate_loss()
+            print(f"step {step}: train {losses['train']:.3f}, valid {losses['valid']:.3f}")
+            if losses['valid'] < best_valid:
+                best_valid = losses['valid']
+                torch.save(model.state_dict(),"./model.pt")
+                print(f"best valid {losses['valid']:.3f} Saved!")
+    model.load_state_dict(torch.load("./model.pt"))  # use the BEST model, not the last one
 
-start = torch.zeros((1,1),dtype = torch.long,device = device) #one starting character
-out = model.generate(start,300)
-print(decode(out[0].tolist()))
+model.eval()
+while True:
+    prompt = input("\nprompt> ")
+    if not prompt:
+        continue      # skip the rest and ask again
+    idx = torch.tensor([encode(prompt)],device=device)
+    out = model.generate(idx,500)
+    print(decode(out[0].tolist()))
