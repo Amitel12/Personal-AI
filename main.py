@@ -10,7 +10,7 @@ n_head = 6 #attention heads per block
 n_layer = 6 # how many blocks stacked on top of each other
 dropout = 0.2 #randomly switches off 20% of the numbers while training
 lr=3e-4
-max_steps = 3000
+max_steps = 8000
 eval_every = 500
 text: str = open('input.txt', encoding='utf-8').read()
 chars = sorted(set(text))
@@ -228,8 +228,8 @@ def estimate_loss():
     return out
 
 
-if os.path.exists("./model.pt"):
-    model.load_state_dict(torch.load("./model.pt"))
+if os.path.exists("model_stories_3k.pt"):
+    model.load_state_dict(torch.load("model_stories_3k.pt"))
     print("loaded saved model!")
 
 else:
@@ -248,9 +248,9 @@ else:
             print(f"step {step}: train {losses['train']:.3f}, valid {losses['valid']:.3f}")
             if losses['valid'] < best_valid:
                 best_valid = losses['valid']
-                torch.save(model.state_dict(),"./model.pt")
+                torch.save(model.state_dict(), "model_stories_3k.pt")
                 print(f"best valid {losses['valid']:.3f} Saved!")
-    model.load_state_dict(torch.load("./model.pt"))  # use the BEST model, not the last one
+    model.load_state_dict(torch.load("model_stories_3k.pt"))  # use the BEST model, not the last one
 
 model.eval()
 while True:
