@@ -33,8 +33,59 @@ def decode(ids):
     for i in ids:
         result+=itos[i]
     return result
+#saving tokenization
+def get_stats(ids):
+    counts = {}
+    for a, b in zip(ids, ids[1:]):
+        counts[(a, b)] = counts.get((a, b), 0) + 1
+    return counts
 
-data = torch.tensor(encode(text)) #all encoded text into a tensor
+
+def merge(ids, pair, new_id):
+    result = []
+    i = 0
+    while i < len(ids):
+        if i < len(ids) - 1 and ids[i] == pair[0] and ids[i + 1] == pair[1]:
+            result.append(new_id)
+            i = i + 2
+        else:
+            result.append(ids[i])
+            i = i + 1
+    return result
+
+
+
+def bpe_encode(s):
+    ids = encode(s)
+    while True:
+        stats = get_stats(ids)
+        best = None
+        for pair in stats:
+            if pair in merges:
+                if best is None or merges[pair] < merges[best]:
+                    best = pair
+        if best is None:
+            break
+        ids = merge(ids, best, merges[best])
+    return ids
+
+
+def bpe_decode(ids):
+    result = ''
+    for i in ids:
+        result += vocab[i]
+    return result
+
+
+bpe = torch.load("bpe.pt")
+merges = bpe["merges"]
+vocab = dict(itos)
+for pair, new_id in merges.items():
+    vocab[new_id] = vocab[pair[0]] + vocab[pair[1]] # 'e' + ' ' = 'e '
+vocab_size = len(vocab)     # 65 letters + 435 merges = 500
+data = torch.tensor(bpe["ids"])
+
+
 ##Splitting the Data to train/valid/test
 n1 = int(0.8*len(data))
 n2=int(0.9*len(data))
@@ -206,6 +257,9 @@ while True:
     prompt = input("\nprompt> ")
     if not prompt:
         continue      # skip the rest and ask again
-    idx = torch.tensor([encode(prompt)],device=device)
+    idx = torch.tensor([bpe_encode(prompt)],device=device)
     out = model.generate(idx,500)
-    print(decode(out[0].tolist()))
+    print(bpe_decode(out[0].tolist()))
+
+
+
