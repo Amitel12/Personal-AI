@@ -5,9 +5,9 @@ from torch.nn import functional as F
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 block_size = 256 #how many chars per chunk
 batch_size = 64 #how many chunks per training step
-n_embd = 384 # how many numbers describe each letter
-n_head = 6 #attention heads per block
-n_layer = 6 # how many blocks stacked on top of each other
+n_embd = 512 # how many numbers describe each letter
+n_head = 8 #attention heads per block
+n_layer = 8 # how many blocks stacked on top of each other
 dropout = 0.2 #randomly switches off 20% of the numbers while training
 lr=3e-4
 max_steps = 8000
@@ -228,8 +228,8 @@ def estimate_loss():
     return out
 
 
-if os.path.exists("model_stories_3k.pt"):
-    model.load_state_dict(torch.load("model_stories_3k.pt"))
+if os.path.exists("model.pt"):
+    model.load_state_dict(torch.load("model.pt"))
     print("loaded saved model!")
 
 else:
@@ -248,9 +248,9 @@ else:
             print(f"step {step}: train {losses['train']:.3f}, valid {losses['valid']:.3f}")
             if losses['valid'] < best_valid:
                 best_valid = losses['valid']
-                torch.save(model.state_dict(), "model_stories_3k.pt")
+                torch.save(model.state_dict(), "model.pt")
                 print(f"best valid {losses['valid']:.3f} Saved!")
-    model.load_state_dict(torch.load("model_stories_3k.pt"))  # use the BEST model, not the last one
+    model.load_state_dict(torch.load("model.pt"))  # use the BEST model, not the last one
 
 model.eval()
 while True:
