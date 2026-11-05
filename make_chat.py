@@ -8,13 +8,18 @@ out = open("chat.txt","w",encoding = "utf-8")
 count = 0
 for row in ds:
     lines = row["dialogue"]
+    names = set(row["speakers"])
     text = ""
     for i in range(len(lines)):
         if i % 2 == 0: # even turns = the user
             tag = "<|user|> "
         else: #odd turns = the bot
             tag = "<|bot|> "
-        text += tag + lines[i] + "\n"
+        line = lines[i]
+        for name in names:
+            line = line.replace(name, "buddy")
+        text += tag + line + "\n"
+
     text += "<|endoftext|>\n"
 
     clean = ""
@@ -24,9 +29,10 @@ for row in ds:
     out.write(clean)
 
     count += 1
-    if count == 30000:
+    if count == 100000:
         break
 out.close()
 print(count, "conversations  saved")
+
 
 

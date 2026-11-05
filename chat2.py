@@ -9,10 +9,10 @@ n_embd = 512 # how many numbers describe each letter
 n_head = 8 #attention heads per block
 n_layer = 8 # how many blocks stacked on top of each other
 dropout = 0.2 #randomly switches off 20% of the numbers while training
-lr=3e-4
-max_steps = 10000
+lr= 1e-4
+max_steps = 5000
 eval_every = 500
-temperature = 0.7
+temperature = 0.6
 
 bpe = torch.load("bpe2.pt")
 chars = bpe["chars"]
@@ -115,6 +115,8 @@ n2=int(0.9*len(data))
 train_data = data[:n1] #0% ~ 80%
 valid_data=data[n1:n2] #80% ~ 90%
 test_data = data[n2:] #90% ~ 100%
+identity_ids = bpe_encode(open("identity.txt", encoding="utf-8").read())
+train_data = torch.cat([train_data, torch.tensor(identity_ids * 30)])
 
 def get_batch(split):
     if split == 'train':
@@ -257,12 +259,11 @@ def estimate_loss():
 if os.path.exists("chat2_model.pt"):
     model.load_state_dict(torch.load("chat2_model.pt"))
     print("loaded saved model!")
-
-
-else:
 #training loop
+train_more = True
+if train_more:
     optimizer = torch.optim.Adam(model.parameters(),lr=lr)
-    best_valid = float('inf')    # infinity: any real loss will be better
+    best_valid = estimate_loss()['valid']
 
     for step in range(max_steps):
         x,y = get_batch('train')
@@ -280,11 +281,13 @@ else:
     model.load_state_dict(torch.load("chat2_model.pt"))  # uses the BEST model, not the last one
 
 model.eval()
-history = ""
+name = input("What's you name? ")
+history = "<|endoftext|>\n"
 while True:
     prompt = input("\nyou> ")
     if not prompt:
         continue
+    prompt = prompt.replace(name, "buddy")
     history += "<|user|> " + prompt + "\n<|bot|>"
 
     idx = torch.tensor([bpe_encode(history)],device=device)
@@ -295,5 +298,6 @@ while True:
     if cut != -1:
         reply = reply[:cut]
     reply = reply.strip()
-    print("bot> " + reply)
+    shown = reply.replace("buddy",name)
+    print("bot> " + shown)
     history += " " + reply + "\n"
